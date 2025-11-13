@@ -1,6 +1,7 @@
 import { TagPicker } from './TagPicker.js';
 import { DateTimePicker } from './DateTimePicker.js';
 import { DEFAULT_DURATION_MINUTES } from '../models/task.js';
+import { toLocalISOString } from '../utils/dates.js';
 
 const PRIORITY_OPTIONS = [
   { value: 1, label: 'Низкий' },
@@ -198,7 +199,7 @@ export class TaskEditorModal {
 
   #collectFormData() {
     const dueInfo = this.datePicker.getValue();
-    const reminderValue = this.reminderInput.value ? new Date(this.reminderInput.value).toISOString() : null;
+    const reminderValue = this.reminderInput.value ? toLocalISOString(new Date(this.reminderInput.value)) : null;
     const durationValue = Number(this.durationInput?.value);
 
     return {

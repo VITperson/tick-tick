@@ -44,7 +44,14 @@ export class Sidebar {
     const newTaskButton = document.createElement('button');
     newTaskButton.type = 'button';
     newTaskButton.className = 'sidebar__new-task';
-    newTaskButton.textContent = 'Новая задача';
+    newTaskButton.setAttribute('aria-label', 'Создать задачу');
+    const newTaskIcon = document.createElement('span');
+    newTaskIcon.className = 'sidebar__new-task-icon';
+    newTaskIcon.textContent = '+';
+    const newTaskLabel = document.createElement('span');
+    newTaskLabel.className = 'sidebar__new-task-label';
+    newTaskLabel.textContent = 'Новая задача';
+    newTaskButton.append(newTaskIcon, newTaskLabel);
     newTaskButton.addEventListener('click', () => this.onNewTask?.());
 
     const collapseButton = document.createElement('button');

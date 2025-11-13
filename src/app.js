@@ -4,6 +4,7 @@ import { Sidebar } from './components/Sidebar.js';
 import { TaskEditorModal } from './components/TaskEditorModal.js';
 import { ReminderManager } from './utils/notify.js';
 import { formatDueDate, formatTimeLabel } from './utils/format.js';
+import { toLocalISOString } from './utils/dates.js';
 import {
   getState,
   subscribe,
@@ -312,7 +313,7 @@ export class App {
     if (offsetDays) {
       date.setDate(date.getDate() + offsetDays);
     }
-    return date.toISOString();
+    return toLocalISOString(date);
   }
 
   #setDoneFilter(projectId) {

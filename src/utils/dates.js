@@ -45,10 +45,20 @@ export function isPast(value) {
   return date.getTime() < Date.now();
 }
 
+function pad(value) {
+  return String(value).padStart(2, '0');
+}
+
 export function getDateKey(value) {
   const date = parseDate(value);
   if (!date) return '';
-  return date.toISOString().slice(0, 10);
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+export function toLocalISOString(dateInput) {
+  const date = new Date(dateInput);
+  if (Number.isNaN(date.getTime())) return '';
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
 export function groupByDate(tasks) {

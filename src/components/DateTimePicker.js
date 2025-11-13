@@ -1,3 +1,5 @@
+import { toLocalISOString } from '../utils/dates.js';
+
 export class DateTimePicker {
   constructor({ label = 'Срок' } = {}) {
     this.label = label;
@@ -36,9 +38,9 @@ export class DateTimePicker {
     if (dueAt) {
       const date = new Date(dueAt);
       if (!Number.isNaN(date.getTime())) {
-        const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-        this.dateInput.value = local.toISOString().slice(0, 10);
-        this.timeInput.value = local.toISOString().slice(11, 16);
+        const localIso = toLocalISOString(date);
+        this.dateInput.value = localIso.slice(0, 10);
+        this.timeInput.value = localIso.slice(11, 16);
       }
     } else {
       this.dateInput.value = '';
@@ -56,7 +58,7 @@ export class DateTimePicker {
       return { dueAt: null, isAllDay };
     }
     const iso = timeValue ? `${dateValue}T${timeValue}:00` : `${dateValue}T00:00:00`;
-    return { dueAt: new Date(iso).toISOString(), isAllDay };
+    return { dueAt: toLocalISOString(new Date(iso)), isAllDay };
   }
 
   render() {

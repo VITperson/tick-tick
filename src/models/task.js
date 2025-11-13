@@ -1,4 +1,5 @@
 import { createId } from '../utils/id.js';
+import { toLocalISOString } from '../utils/dates.js';
 
 const MAX_TITLE = 200;
 const MAX_DESCRIPTION = 10000;
@@ -32,7 +33,7 @@ function normalizeDate(value) {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
-  return date.toISOString();
+  return toLocalISOString(date);
 }
 
 function normalizeTags(tags = []) {
@@ -60,7 +61,7 @@ function normalizeSubtasks(items = []) {
     .filter((item) => item.title.length > 0);
 }
 
-const nowISO = () => new Date().toISOString();
+const nowISO = () => toLocalISOString(new Date());
 
 function sanitizeTitle(title) {
   const value = typeof title === 'string' ? title.trim().slice(0, MAX_TITLE) : '';

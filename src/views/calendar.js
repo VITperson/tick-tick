@@ -1,7 +1,7 @@
 import { TaskList } from '../components/TaskList.js';
 import { sortByPriorityAndTime } from './helpers.js';
 import { formatTimeLabel } from '../utils/format.js';
-import { groupByDate, isSameDay, parseDate, startOfDay } from '../utils/dates.js';
+import { groupByDate, isSameDay, parseDate, startOfDay, toLocalISOString } from '../utils/dates.js';
 import { DEFAULT_DURATION_MINUTES } from '../models/task.js';
 
 const WEEK_DAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
@@ -136,7 +136,7 @@ function getTaskTooltip(task, project, timeFormat) {
 }
 
 function toIsoDate(date) {
-  return date.toISOString().slice(0, 10);
+  return toLocalISOString(date).slice(0, 10);
 }
 
 function buildGridDates(centerDate) {
@@ -272,6 +272,7 @@ function buildWeekView(tasksByDate, timeFormat, handlers, selectDate, projectMap
 
   const MIN_DURATION = 15;
   const DAY_MINUTES = 24 * 60;
+  const QUARTER_MINUTES = 15;
 
   function startResizing(event, direction, task, day, taskBlock, handle) {
     const due = parseDate(task.dueAt);
@@ -317,7 +318,7 @@ function buildWeekView(tasksByDate, timeFormat, handlers, selectDate, projectMap
         const newDue = new Date(originalDate);
         newDue.setHours(0, 0, 0, 0);
         newDue.setMinutes(Math.round(previewStart));
-        updates.dueAt = newDue.toISOString();
+        updates.dueAt = toLocalISOString(newDue);
       }
       handlers.updateTask?.(task, updates);
     };
@@ -348,22 +349,54 @@ function buildWeekView(tasksByDate, timeFormat, handlers, selectDate, projectMap
     if (!isSameMonth(day, visibleMonth)) {
       column.classList.add('calendar-week__day-column--outside');
     }
-    column.addEventListener('click', (event) => {
-      selectDate(day);
-      if (!handlers.createTask) return;
+    const highlight = document.createElement('span');
+    highlight.className = 'calendar-week__hover-highlight';
+    column.append(highlight);
+
+    const updateHoverHighlight = (event) => {
       const rect = column.getBoundingClientRect();
       if (!rect.height) return;
       const relativeY = event.clientY - rect.top;
-      const minutes = Math.round(Math.min(24 * 60 - 1, Math.max(0, (relativeY / rect.height) * 24 * 60)));
-      const dueDate = new Date(day);
-      dueDate.setHours(0, 0, 0, 0);
-      dueDate.setMinutes(minutes);
-      dueDate.setSeconds(0);
-      dueDate.setMilliseconds(0);
-      handlers.createTask({
-        dueAt: dueDate.toISOString(),
-        duration: DEFAULT_DURATION_MINUTES,
-      });
+      const minutes = Math.max(
+        0,
+        Math.min(DAY_MINUTES - QUARTER_MINUTES, (relativeY / rect.height) * DAY_MINUTES),
+      );
+      const quarterStart = Math.floor(minutes / QUARTER_MINUTES) * QUARTER_MINUTES;
+      const top = (quarterStart / 60) * HOUR_HEIGHT;
+      highlight.style.top = `${top}px`;
+      highlight.style.opacity = '1';
+    };
+
+    const hideHoverHighlight = () => {
+      highlight.style.opacity = '0';
+    };
+
+    column.addEventListener('mousemove', updateHoverHighlight);
+    column.addEventListener('mouseleave', hideHoverHighlight);
+
+    column.addEventListener('click', (event) => {
+      const rect = column.getBoundingClientRect();
+      const validityCheck = rect.height && handlers.createTask;
+      let payload = null;
+      if (validityCheck) {
+        const relativeY = event.clientY - rect.top;
+        const minutes = Math.round(
+          Math.min(24 * 60 - 1, Math.max(0, (relativeY / rect.height) * 24 * 60)),
+        );
+        const dueDate = new Date(day);
+        dueDate.setHours(0, 0, 0, 0);
+        dueDate.setMinutes(minutes);
+        dueDate.setSeconds(0);
+        dueDate.setMilliseconds(0);
+        payload = {
+          dueAt: toLocalISOString(dueDate),
+          duration: DEFAULT_DURATION_MINUTES,
+        };
+      }
+      selectDate(day);
+      if (payload) {
+        handlers.createTask(payload);
+      }
     });
 
     const tasksLayer = document.createElement('div');
@@ -582,6 +615,15 @@ function renderCalendarView({ state, handlers }) {
   const gridWrapper = document.createElement('div');
   gridWrapper.className = 'calendar-view__grid';
 
+  let hasPerformedInitialWeekScroll = false;
+  let preservedScrollTop = 0;
+
+  gridWrapper.addEventListener('scroll', () => {
+    if (viewMode === VIEW_MODES.WEEK) {
+      preservedScrollTop = gridWrapper.scrollTop;
+    }
+  });
+
   function scheduleWeekScroll(weekView) {
     if (!weekView || !gridWrapper) return;
     requestAnimationFrame(() => {
@@ -589,6 +631,8 @@ function renderCalendarView({ state, handlers }) {
         weekView.querySelector('.calendar-week__header-row')?.offsetHeight || 0;
       const targetOffset = DEFAULT_WEEK_SCROLL_HOUR * HOUR_HEIGHT;
       gridWrapper.scrollTop = Math.max(0, targetOffset - headerHeight);
+      preservedScrollTop = gridWrapper.scrollTop;
+      hasPerformedInitialWeekScroll = true;
     });
   }
 
@@ -656,7 +700,11 @@ function renderCalendarView({ state, handlers }) {
         projectMap,
       );
       gridWrapper.append(weekView);
-      scheduleWeekScroll(weekView);
+      if (!hasPerformedInitialWeekScroll) {
+        scheduleWeekScroll(weekView);
+      } else {
+        gridWrapper.scrollTop = preservedScrollTop;
+      }
     }
   }
 

@@ -1,4 +1,5 @@
 import { createId } from '../utils/id.js';
+import { toLocalISOString } from '../utils/dates.js';
 
 const STORAGE_KEY = 'tt.state.v1';
 const SAVE_DELAY = 200;
@@ -11,7 +12,7 @@ const PROJECT_PRESETS = [
 ];
 
 const buildDemoProjects = () => {
-  const nowIso = new Date().toISOString();
+  const nowIso = toLocalISOString(new Date());
   return PROJECT_PRESETS.map((preset, index) => ({
     id: preset.id,
     name: preset.name,
@@ -157,7 +158,7 @@ const buildDemoTasks = (projects = []) => {
     },
   ];
 
-  const nowIso = now.toISOString();
+  const nowIso = toLocalISOString(now);
   const tasks = [];
   let order = 0;
   schedule.forEach((entry) => {
@@ -176,7 +177,7 @@ const buildDemoTasks = (projects = []) => {
         description: entry.description || '',
         projectId: entry.projectId || null,
         tags: entry.tags || [],
-        dueAt: due.toISOString(),
+        dueAt: toLocalISOString(due),
         isAllDay: false,
         reminderAt: null,
         priority: entry.priority || 2,
@@ -230,7 +231,15 @@ function normalizeLoadedState(raw) {
 
   const state = clone(BASE_STATE);
   state.projects = Array.isArray(raw.projects) ? raw.projects : [];
-  state.tasks = Array.isArray(raw.tasks) ? raw.tasks : [];
+  state.tasks = (Array.isArray(raw.tasks) ? raw.tasks : []).map((task) => {
+    if (!task?.dueAt) return task;
+    const date = new Date(task.dueAt);
+    if (Number.isNaN(date.getTime())) return task;
+    return {
+      ...task,
+      dueAt: toLocalISOString(date),
+    };
+  });
   state.settings = normalizeSettings(raw.settings);
   return state;
 }

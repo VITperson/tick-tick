@@ -1,4 +1,5 @@
 import { createId } from '../utils/id.js';
+import { toLocalISOString } from '../utils/dates.js';
 
 const MAX_NAME = 120;
 
@@ -21,7 +22,7 @@ function sanitizeOrder(order) {
 }
 
 export function createProject(input) {
-  const now = new Date().toISOString();
+  const now = toLocalISOString(new Date());
   return {
     id: input?.id || createId(),
     name: sanitizeName(input?.name),
@@ -39,6 +40,6 @@ export function updateProject(project, updates) {
     name: updates?.name ? sanitizeName(updates.name) : project.name,
     color: updates?.color !== undefined ? sanitizeColor(updates.color) : project.color,
     order: updates?.order !== undefined ? sanitizeOrder(updates.order) : project.order,
-    updatedAt: new Date().toISOString(),
+    updatedAt: toLocalISOString(new Date()),
   };
 }

@@ -1,6 +1,7 @@
 import { loadState, scheduleSave, getDefaultState } from './storage.js';
 import { createTask, updateTask as updateTaskModel } from '../models/task.js';
 import { createProject, updateProject as updateProjectModel } from '../models/project.js';
+import { toLocalISOString } from '../utils/dates.js';
 
 const listeners = new Map();
 let state = loadState();
@@ -113,7 +114,7 @@ export function updateTask(id, updates) {
 }
 
 export function toggleTaskDone(id, forceState) {
-  const now = new Date().toISOString();
+  const now = toLocalISOString(new Date());
   updateState(
     (current) => {
       const task = current.tasks.find((item) => item.id === id);
