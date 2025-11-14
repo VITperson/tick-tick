@@ -11,7 +11,7 @@ export class Header {
 
     const branding = document.createElement('div');
     branding.className = 'header__branding';
-    branding.textContent = 'Tick-Tick';
+    branding.textContent = 'Vick-Mick';
 
     const searchLabel = document.createElement('label');
     searchLabel.className = 'header__search';

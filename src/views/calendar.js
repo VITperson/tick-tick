@@ -17,6 +17,7 @@ const VIEW_MODES = {
 };
 const HOURS = Array.from({ length: 24 }, (_, index) => index);
 const HOUR_HEIGHT = 60;
+const COLUMN_SPACING_REM = 0.35;
 const DEFAULT_WEEK_SCROLL_HOUR = 8;
 let viewMode = VIEW_MODES.WEEK;
 
@@ -126,6 +127,44 @@ function buildProjectMap(projects = []) {
     }
   });
   return map;
+}
+
+function layoutOverlappingTasks(records) {
+  const slots = [];
+  const active = new Set();
+
+  const releaseExpired = (startValue) => {
+    slots.forEach((slot) => {
+      if (slot.event && slot.end <= startValue) {
+        active.delete(slot.event);
+        slot.event = null;
+        slot.end = 0;
+      }
+    });
+  };
+
+  const updateActiveConcurrency = () => {
+    const concurrency = Math.max(active.size, 1);
+    active.forEach((record) => {
+      record.columns = Math.max(record.columns || 1, concurrency);
+    });
+  };
+
+  records.forEach((record) => {
+    releaseExpired(record.start);
+    let slot = slots.find((entry) => entry.event === null);
+    if (!slot) {
+      slot = { index: slots.length, event: null, end: 0 };
+      slots.push(slot);
+    }
+    slot.event = record;
+    slot.end = record.end;
+    record.slotIndex = slot.index;
+    active.add(record);
+    updateActiveConcurrency();
+  });
+
+  return records;
 }
 
 function getTaskTooltip(task, project, timeFormat) {
@@ -274,69 +313,6 @@ function buildWeekView(tasksByDate, timeFormat, handlers, selectDate, projectMap
   const DAY_MINUTES = 24 * 60;
   const QUARTER_MINUTES = 15;
 
-  function startResizing(event, direction, task, day, taskBlock, handle) {
-    const due = parseDate(task.dueAt);
-    if (!due) return;
-    const initialDuration = Number.isFinite(Number(task.duration))
-      ? Number(task.duration)
-      : DEFAULT_DURATION_MINUTES;
-    const initialStart = due.getHours() * 60 + due.getMinutes();
-    const initialEnd = Math.min(24 * 60, initialStart + initialDuration);
-    const startY = event.clientY;
-    const pointerId = event.pointerId;
-    let previewStart = initialStart;
-    let previewDuration = initialDuration;
-
-    const clampMinutes = (value) => Math.max(0, Math.min(DAY_MINUTES - MIN_DURATION, value));
-
-    const moveHandler = (moveEvent) => {
-      const deltaMinutes = ((moveEvent.clientY - startY) / HOUR_HEIGHT) * 60;
-      if (direction === 'bottom') {
-        const rawDuration = initialDuration + deltaMinutes;
-        const snapped = snapToQuarter(rawDuration);
-        previewDuration = Math.min(DAY_MINUTES - initialStart, Math.max(MIN_DURATION, snapped));
-        taskBlock.style.height = `${Math.max((previewDuration / 60) * HOUR_HEIGHT, 28)}px`;
-      } else {
-        const rawStart = initialStart + deltaMinutes;
-        const snappedStart = snapToQuarter(rawStart);
-        const maxStart = Math.min(initialEnd - MIN_DURATION, DAY_MINUTES - MIN_DURATION);
-        previewStart = Math.min(maxStart, clampMinutes(snappedStart));
-        previewDuration = Math.max(MIN_DURATION, initialEnd - previewStart);
-        taskBlock.style.top = `${Math.max((previewStart / 60) * HOUR_HEIGHT, 0)}px`;
-        taskBlock.style.height = `${Math.max((previewDuration / 60) * HOUR_HEIGHT, 28)}px`;
-      }
-    };
-
-    const upHandler = () => {
-      handle.releasePointerCapture?.(pointerId);
-      document.body.style.cursor = '';
-      document.removeEventListener('pointermove', moveHandler);
-      document.removeEventListener('pointerup', upHandler);
-      const updates = { duration: Math.round(previewDuration) };
-      if (direction === 'top') {
-        const originalDate = parseDate(task.dueAt) || new Date(day);
-        const newDue = new Date(originalDate);
-        newDue.setHours(0, 0, 0, 0);
-        newDue.setMinutes(Math.round(previewStart));
-        updates.dueAt = toLocalISOString(newDue);
-      }
-      handlers.updateTask?.(task, updates);
-    };
-
-    document.body.style.cursor = 'ns-resize';
-    handle.setPointerCapture?.(pointerId);
-    document.addEventListener('pointermove', moveHandler);
-    document.addEventListener('pointerup', upHandler);
-  }
-
-  function attachHandle(handle, direction, task, day, taskBlock) {
-    handle.addEventListener('pointerdown', (event) => {
-      event.stopPropagation();
-      event.preventDefault();
-      startResizing(event, direction, task, day, taskBlock, handle);
-    });
-  }
-
   weekDays.forEach((day) => {
     const column = document.createElement('div');
     column.className = 'calendar-week__day-column';
@@ -352,6 +328,13 @@ function buildWeekView(tasksByDate, timeFormat, handlers, selectDate, projectMap
     const highlight = document.createElement('span');
     highlight.className = 'calendar-week__hover-highlight';
     column.append(highlight);
+    const reservedIntervals = [];
+    const isSlotFree = (startMinutes) => {
+      const slotEnd = startMinutes + QUARTER_MINUTES;
+      return !reservedIntervals.some((interval) => {
+        return startMinutes < interval.end && slotEnd > interval.start;
+      });
+    };
 
     const updateHoverHighlight = (event) => {
       const rect = column.getBoundingClientRect();
@@ -363,6 +346,10 @@ function buildWeekView(tasksByDate, timeFormat, handlers, selectDate, projectMap
       );
       const quarterStart = Math.floor(minutes / QUARTER_MINUTES) * QUARTER_MINUTES;
       const top = (quarterStart / 60) * HOUR_HEIGHT;
+      if (!isSlotFree(quarterStart)) {
+        highlight.style.opacity = '0';
+        return;
+      }
       highlight.style.top = `${top}px`;
       highlight.style.opacity = '1';
     };
@@ -403,71 +390,90 @@ function buildWeekView(tasksByDate, timeFormat, handlers, selectDate, projectMap
     tasksLayer.className = 'calendar-week__tasks-layer';
 
     const dayKey = toIsoDate(day);
-    (tasksByDate.get(dayKey) || [])
-      .slice()
-      .sort((a, b) => {
-        const aTime = parseDate(a.dueAt)?.getTime() || 0;
-        const bTime = parseDate(b.dueAt)?.getTime() || 0;
-        return aTime - bTime;
-      })
-      .forEach((task) => {
+    const records = (tasksByDate.get(dayKey) || [])
+      .map((task) => {
         const due = parseDate(task.dueAt);
-        if (!due) return;
+        if (!due) return null;
         const startMinutes = due.getHours() * 60 + due.getMinutes();
         const durationMinutes = Number.isFinite(Number(task.duration))
           ? Number(task.duration)
           : DEFAULT_DURATION_MINUTES;
-        const top = (startMinutes / 60) * HOUR_HEIGHT;
-        const height = Math.max((durationMinutes / 60) * HOUR_HEIGHT, 28);
-        const taskBlock = document.createElement('button');
-        taskBlock.type = 'button';
-        taskBlock.className = 'calendar-week__task-block';
-        if (task.doneAt) {
-          taskBlock.classList.add('calendar-week__task-block--done');
-        }
-        if (task.isAllDay) {
-          taskBlock.classList.add('calendar-week__task-block--allday');
-        }
-        taskBlock.style.top = `${top}px`;
-        taskBlock.style.height = `${height}px`;
-        const project = projectMap.get(task.projectId);
-        const tooltipText = getTaskTooltip(task, project, timeFormat);
-        attachTooltip(taskBlock, tooltipText);
-        const topHandle = document.createElement('span');
-        topHandle.className = 'calendar-week__task-handle calendar-week__task-handle--top';
-        const bottomHandle = document.createElement('span');
-        bottomHandle.className = 'calendar-week__task-handle calendar-week__task-handle--bottom';
-        const content = document.createElement('div');
-        content.className = 'calendar-week__task-block__content';
-        if (project) {
-          const projectBadge = document.createElement('span');
-          projectBadge.className = 'calendar-week__task-block__project';
-          projectBadge.textContent = project.name;
-          if (project.color) {
-            projectBadge.style.background = project.color;
-          }
-          content.append(projectBadge);
-        }
-        const text = document.createElement('span');
-        text.textContent = task.title;
-        content.append(text);
+        return {
+          task,
+          start: startMinutes,
+          end: startMinutes + durationMinutes,
+          durationMinutes,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.start - b.start);
 
-        attachHandle(topHandle, 'top', task, day, taskBlock);
-        attachHandle(bottomHandle, 'bottom', task, day, taskBlock);
+    const arrangedRecords = layoutOverlappingTasks(records);
+    const spacingRem = COLUMN_SPACING_REM;
 
-        taskBlock.append(topHandle, content, bottomHandle);
-        taskBlock.addEventListener('click', (event) => {
-          event.stopPropagation();
-          handlers.editTask?.(task);
-        });
-        tasksLayer.append(taskBlock);
+    arrangedRecords.forEach((record) => {
+      const { task, start, durationMinutes, slotIndex = 0, columns = 1 } = record;
+      const top = (start / 60) * HOUR_HEIGHT;
+      const height = Math.max((durationMinutes / 60) * HOUR_HEIGHT, 28);
+      reservedIntervals.push({
+        start,
+        end: start + durationMinutes,
       });
+
+      const taskBlock = document.createElement('button');
+      taskBlock.type = 'button';
+      taskBlock.className = 'calendar-week__task-block';
+      taskBlock.style.top = `${top}px`;
+      taskBlock.style.height = `${height}px`;
+      const totalColumns = Math.max(columns, 1);
+      const columnWidthPercent = 100 / totalColumns;
+      const leftOffsetPercent = slotIndex * columnWidthPercent;
+      taskBlock.style.left = `calc(${leftOffsetPercent}% + ${spacingRem / 2}rem)`;
+      taskBlock.style.width = `calc(${columnWidthPercent}% - ${spacingRem}rem)`;
+      taskBlock.style.right = 'auto';
+
+      if (task.doneAt) {
+        taskBlock.classList.add('calendar-week__task-block--done');
+      }
+      if (task.isAllDay) {
+        taskBlock.classList.add('calendar-week__task-block--allday');
+      }
+      const project = projectMap.get(task.projectId);
+      const tooltipText = getTaskTooltip(task, project, timeFormat);
+      attachTooltip(taskBlock, tooltipText);
+      const content = document.createElement('div');
+      content.className = 'calendar-week__task-block__content';
+      const isCondensed = durationMinutes <= 30;
+      content.classList.toggle('calendar-week__task-block__content--condensed', isCondensed);
+      if (project) {
+        const projectBadge = document.createElement('span');
+        projectBadge.className = 'calendar-week__task-block__project';
+        projectBadge.textContent = project.name;
+        if (project.color) {
+          projectBadge.style.background = project.color;
+        }
+        content.append(projectBadge);
+      }
+      const text = document.createElement('span');
+      text.textContent = task.title;
+      content.append(text);
+
+      taskBlock.append(content);
+      taskBlock.addEventListener('click', (event) => {
+        event.stopPropagation();
+        handlers.editTask?.(task);
+      });
+      tasksLayer.append(taskBlock);
+    });
 
     column.append(tasksLayer);
     body.append(column);
   });
 
-  wrapper.append(headerRow, body);
+  const bodyWrapper = document.createElement('div');
+  bodyWrapper.className = 'calendar-week__body-wrapper';
+  bodyWrapper.append(body);
+  wrapper.append(headerRow, bodyWrapper);
   return wrapper;
 }
 
@@ -617,21 +623,35 @@ function renderCalendarView({ state, handlers }) {
 
   let hasPerformedInitialWeekScroll = false;
   let preservedScrollTop = 0;
+  let weekBodyScroller = null;
 
-  gridWrapper.addEventListener('scroll', () => {
-    if (viewMode === VIEW_MODES.WEEK) {
-      preservedScrollTop = gridWrapper.scrollTop;
+  function handleWeekBodyScroll() {
+    if (weekBodyScroller) {
+      preservedScrollTop = weekBodyScroller.scrollTop;
     }
-  });
+  }
+
+  function attachWeekScroller(scroller) {
+    if (weekBodyScroller === scroller) {
+      return;
+    }
+    if (weekBodyScroller) {
+      weekBodyScroller.removeEventListener('scroll', handleWeekBodyScroll);
+    }
+    weekBodyScroller = scroller;
+    if (weekBodyScroller) {
+      weekBodyScroller.addEventListener('scroll', handleWeekBodyScroll);
+    }
+  }
 
   function scheduleWeekScroll(weekView) {
-    if (!weekView || !gridWrapper) return;
+    if (!weekView) return;
+    const bodyWrapper = weekView.querySelector('.calendar-week__body-wrapper');
+    if (!bodyWrapper) return;
     requestAnimationFrame(() => {
-      const headerHeight =
-        weekView.querySelector('.calendar-week__header-row')?.offsetHeight || 0;
       const targetOffset = DEFAULT_WEEK_SCROLL_HOUR * HOUR_HEIGHT;
-      gridWrapper.scrollTop = Math.max(0, targetOffset - headerHeight);
-      preservedScrollTop = gridWrapper.scrollTop;
+      bodyWrapper.scrollTop = targetOffset;
+      preservedScrollTop = targetOffset;
       hasPerformedInitialWeekScroll = true;
     });
   }
@@ -688,8 +708,11 @@ function renderCalendarView({ state, handlers }) {
   }
 
   function updateGrid() {
+    attachWeekScroller(null);
     gridWrapper.innerHTML = '';
     if (viewMode === VIEW_MODES.MONTH) {
+      attachWeekScroller(null);
+      gridWrapper.classList.remove('calendar-view__grid--week-scroll');
       gridWrapper.append(buildMonthGrid(tasksByDate, timeFormat, handlers, selectDate, projectMap));
     } else {
       const weekView = buildWeekView(
@@ -700,10 +723,15 @@ function renderCalendarView({ state, handlers }) {
         projectMap,
       );
       gridWrapper.append(weekView);
+      const bodyWrapper = weekView.querySelector('.calendar-week__body-wrapper');
+      attachWeekScroller(bodyWrapper);
+      gridWrapper.classList.add('calendar-view__grid--week-scroll');
       if (!hasPerformedInitialWeekScroll) {
         scheduleWeekScroll(weekView);
       } else {
-        gridWrapper.scrollTop = preservedScrollTop;
+        if (bodyWrapper) {
+          bodyWrapper.scrollTop = preservedScrollTop;
+        }
       }
     }
   }

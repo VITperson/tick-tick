@@ -113,6 +113,7 @@ export class App {
     this.header?.setSearchValue(searchValue);
     this.sidebar?.render(state, this.route, this.isSidebarCollapsed);
     this.editor?.setProjects(state.projects);
+    this.editor?.setTagSuggestions(this.#collectTagSuggestions(state.tasks));
     this.#renderView();
   }
 
@@ -182,6 +183,18 @@ export class App {
       payload.tags = [...defaults.tags];
     }
     addTask(payload);
+  }
+
+  #collectTagSuggestions(tasks = []) {
+    const tags = new Set();
+    tasks.forEach((task) => {
+      task.tags?.forEach((tag) => {
+        if (tag) {
+          tags.add(tag);
+        }
+      });
+    });
+    return Array.from(tags).sort((a, b) => a.localeCompare(b, 'ru', { sensitivity: 'base' }));
   }
 
   #handleToggleTask(task, checked) {

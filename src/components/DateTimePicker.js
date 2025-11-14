@@ -3,6 +3,7 @@ import { toLocalISOString } from '../utils/dates.js';
 export class DateTimePicker {
   constructor({ label = 'Срок' } = {}) {
     this.label = label;
+    this.allDayChangeHandlers = new Set();
     this.element = this.#createElement();
   }
 
@@ -28,7 +29,9 @@ export class DateTimePicker {
     this.dateInput = dateInput;
     this.timeInput = timeInput;
     this.allDayCheckbox = allDayCheckbox;
-    this.allDayCheckbox.addEventListener('change', () => this.#syncTimeState());
+    this.allDayCheckbox.addEventListener('change', () => {
+      this.#syncTimeState();
+    });
 
     wrapper.append(legend, dateInput, timeInput, allDayLabel);
     return wrapper;
@@ -48,6 +51,7 @@ export class DateTimePicker {
     }
     this.allDayCheckbox.checked = Boolean(isAllDay);
     this.#syncTimeState();
+    this.#emitAllDayChange();
   }
 
   getValue() {
@@ -71,5 +75,23 @@ export class DateTimePicker {
     if (this.allDayCheckbox.checked) {
       this.timeInput.value = '';
     }
+    this.#emitAllDayChange();
+  }
+
+  #emitAllDayChange() {
+    const isAllDay = this.allDayCheckbox?.checked ?? false;
+    this.allDayChangeHandlers.forEach((handler) => handler(isAllDay));
+  }
+
+  onAllDayChange(handler) {
+    if (typeof handler === 'function') {
+      this.allDayChangeHandlers.add(handler);
+      return () => this.allDayChangeHandlers.delete(handler);
+    }
+    return () => {};
+  }
+
+  isAllDay() {
+    return Boolean(this.allDayCheckbox?.checked);
   }
 }

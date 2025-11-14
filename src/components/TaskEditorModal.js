@@ -87,6 +87,11 @@ export class TaskEditorModal {
     durationInput.step = '5';
     durationInput.value = String(DEFAULT_DURATION_MINUTES);
     durationLabel.append(durationTitle, durationInput);
+    const syncDurationState = () => {
+      durationInput.disabled = this.datePicker.isAllDay();
+    };
+    this.datePicker.onAllDayChange(syncDurationState);
+    syncDurationState();
 
     const subtasksSection = document.createElement('section');
     subtasksSection.className = 'task-editor__subtasks';
@@ -311,6 +316,10 @@ export class TaskEditorModal {
 
     this.element.classList.remove('hidden');
     this.titleInput.focus();
+  }
+
+  setTagSuggestions(tags) {
+    this.tagPicker.setSuggestions(tags);
   }
 
   #toInputDate(value) {
