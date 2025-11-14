@@ -53,6 +53,17 @@ export function resetState() {
   return setState(getDefaultState(), { type: 'state:reset' });
 }
 
+export function replaceState(newState) {
+  if (!newState) return state;
+  return setState(
+    {
+      ...getDefaultState(),
+      ...newState,
+    },
+    { type: 'state:restore' },
+  );
+}
+
 function normalizeProjectId(value) {
   return value ?? null;
 }

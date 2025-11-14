@@ -356,6 +356,33 @@ a {
   border: 1px solid var(--border);
 }
 
+.header__cloud-sync {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+.header__cloud-sync-status {
+  font-size: 0.85rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.header__cloud-sync-btn {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.25rem 0.75rem;
+  background: transparent;
+  color: var(--fg);
+  font-size: 0.75rem;
+}
+
+.header__cloud-sync-btn--secondary {
+  background: var(--border);
+}
+
 .task-list {
   display: flex;
   flex-direction: column;

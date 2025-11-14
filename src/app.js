@@ -19,6 +19,7 @@ import {
   reorderProject,
   clearCompletedTasks,
   updateSettings,
+  replaceState,
 } from './state/store.js';
 import { renderTodayView } from './views/today.js';
 import { renderUpcomingView } from './views/upcoming.js';
@@ -27,6 +28,8 @@ import { renderTagView } from './views/tag.js';
 import { renderDoneView } from './views/done.js';
 import { renderSearchView } from './views/search.js';
 import { renderCalendarView } from './views/calendar.js';
+import { SyncManager } from './utils/SyncManager.js';
+import syncConfig from './config/syncConfig.js';
 
 export class App {
   constructor(root) {
@@ -34,6 +37,7 @@ export class App {
     this.state = getState();
     this.route = null;
     this.isSidebarCollapsed = false;
+    this.syncManager = new SyncManager(syncConfig);
   }
 
   init() {
@@ -41,6 +45,7 @@ export class App {
     this.header = new Header(this.headerContainer, {
       onSearch: (value) => this.#handleSearch(value),
       onToggleTimeFormat: () => this.#handleToggleTimeFormat(),
+      onSyncAction: (action) => this.#handleSyncAction(action),
     });
     this.sidebar = new Sidebar(this.sidebarContainer, {
       onNewTask: () => this.#openTaskEditor(null, this.#getRouteDefaults()),
@@ -55,6 +60,9 @@ export class App {
       onDelete: (task) => this.#handleTaskDelete(task),
       onClose: () => this.#restoreFocus(),
     });
+    this.syncManager.onStatusChange((status) => {
+      this.header?.setSyncStatus(status);
+    });
     this.reminderManager = new ReminderManager({
       onReminder: (task) => this.#handleReminder(task),
     });
@@ -63,6 +71,7 @@ export class App {
     this.unsubscribeStore = subscribe('state:changed', ({ state }) => {
       this.state = state;
       this.reminderManager?.sync(state.tasks);
+      this.syncManager?.schedulePush(state);
       this.render();
     });
 
@@ -77,6 +86,12 @@ export class App {
 
     this.render();
     this.reminderManager?.sync(this.state.tasks);
+    this.syncManager
+      .init()
+      .then(() => this.#restoreFromCloud())
+      .catch((error) => {
+        console.error('SyncManager.init', error);
+      });
   }
 
   #buildLayout() {
@@ -159,6 +174,36 @@ export class App {
       case 'today':
       default:
         return (ctx) => renderTodayView(ctx);
+    }
+  }
+
+  async #restoreFromCloud() {
+    try {
+      const cloudState = await this.syncManager?.pullBackup();
+      const hasLocalData =
+        (this.state.tasks?.length || 0) + (this.state.projects?.length || 0);
+      if (cloudState && !hasLocalData) {
+        replaceState(cloudState);
+      }
+    } catch (error) {
+      console.error('restoreFromCloud', error);
+    }
+  }
+
+  #handleSyncAction(action) {
+    if (!action) return;
+    switch (action) {
+      case 'connect':
+        this.syncManager?.startAuthFlow();
+        break;
+      case 'sync':
+        this.syncManager?.schedulePush(this.state);
+        break;
+      case 'disconnect':
+        this.syncManager?.disconnect();
+        break;
+      default:
+        break;
     }
   }
 
