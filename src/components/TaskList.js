@@ -2,8 +2,8 @@ import { createTaskItem } from './TaskItem.js';
 import { enableReorder } from '../utils/dnd.js';
 
 export class TaskList {
-  constructor({ onToggle, onEdit, onDelete } = {}) {
-    this.handlers = { onToggle, onEdit, onDelete };
+  constructor({ onToggle, onEdit, onDelete, onSubtaskToggle } = {}) {
+    this.handlers = { onToggle, onEdit, onDelete, onSubtaskToggle };
   }
 
   renderSections(sections = [], options = {}) {

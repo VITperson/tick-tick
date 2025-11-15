@@ -38,6 +38,9 @@ export class App {
     this.route = null;
     this.isSidebarCollapsed = false;
     this.syncManager = new SyncManager(syncConfig);
+    this.lastCloudSyncedAt = null;
+    this.isRestoringCloud = false;
+    this.lastSyncSnapshot = JSON.stringify(this.state);
   }
 
   init() {
@@ -62,6 +65,9 @@ export class App {
     });
     this.syncManager.onStatusChange((status) => {
       this.header?.setSyncStatus(status);
+      if (status.state === 'connected') {
+        this.#restoreFromCloud();
+      }
     });
     this.reminderManager = new ReminderManager({
       onReminder: (task) => this.#handleReminder(task),
@@ -71,7 +77,11 @@ export class App {
     this.unsubscribeStore = subscribe('state:changed', ({ state }) => {
       this.state = state;
       this.reminderManager?.sync(state.tasks);
-      this.syncManager?.schedulePush(state);
+      const serialized = JSON.stringify(state);
+      if (serialized !== this.lastSyncSnapshot) {
+        this.lastSyncSnapshot = serialized;
+        this.syncManager?.schedulePush(state);
+      }
       this.render();
     });
 
@@ -88,7 +98,6 @@ export class App {
     this.reminderManager?.sync(this.state.tasks);
     this.syncManager
       .init()
-      .then(() => this.#restoreFromCloud())
       .catch((error) => {
         console.error('SyncManager.init', error);
       });
@@ -177,16 +186,26 @@ export class App {
     }
   }
 
-  async #restoreFromCloud() {
+  async #restoreFromCloud(force = false) {
+    if (this.isRestoringCloud) return;
+    if (!this.syncManager) return;
+    this.isRestoringCloud = true;
     try {
-      const cloudState = await this.syncManager?.pullBackup();
-      const hasLocalData =
-        (this.state.tasks?.length || 0) + (this.state.projects?.length || 0);
-      if (cloudState && !hasLocalData) {
-        replaceState(cloudState);
+      const backup = await this.syncManager.pullBackup();
+      const cloudState = backup?.state;
+      if (!cloudState) return;
+      const syncedAt = backup.meta?.syncedAt || null;
+      if (!force && syncedAt && this.lastCloudSyncedAt === syncedAt) {
+        return;
       }
+      const merged = this.#mergeCloudState(cloudState);
+      this.lastSyncSnapshot = JSON.stringify(merged);
+      replaceState(merged);
+      this.lastCloudSyncedAt = syncedAt;
     } catch (error) {
       console.error('restoreFromCloud', error);
+    } finally {
+      this.isRestoringCloud = false;
     }
   }
 
@@ -244,6 +263,14 @@ export class App {
 
   #handleToggleTask(task, checked) {
     toggleTaskDone(task.id, checked);
+  }
+
+  #handleToggleSubtask(task, subtaskId, checked) {
+    if (!task || !subtaskId) return;
+    const nextSubtasks = (task.subtasks || []).map((subtask) =>
+      subtask.id === subtaskId ? { ...subtask, done: checked } : subtask,
+    );
+    updateTask(task.id, { subtasks: nextSubtasks });
   }
 
   #handleTaskDelete(task) {
@@ -329,6 +356,7 @@ export class App {
     return {
       quickAdd: (payload) => this.#handleQuickAdd(payload),
       toggleTask: (task, checked) => this.#handleToggleTask(task, checked),
+      toggleSubtask: (task, subtaskId, checked) => this.#handleToggleSubtask(task, subtaskId, checked),
       editTask: (task) => this.#openTaskEditor(task),
       deleteTask: (task) => this.#handleTaskDelete(task),
       reorderTask: (taskId, index, projectId) => this.#handleTaskReorder(taskId, index, projectId),
@@ -435,5 +463,53 @@ export class App {
 
   #restoreFocus() {
     this.headerContainer?.querySelector('input[type="search"]')?.focus();
+  }
+
+  #mergeCloudState(remoteState = {}) {
+    const localState = this.state || getState();
+    return {
+      ...localState,
+      ...remoteState,
+      tasks: this.#mergeCollection(localState.tasks, remoteState.tasks),
+      projects: this.#mergeCollection(localState.projects, remoteState.projects),
+      settings: {
+        ...localState.settings,
+        ...(remoteState.settings || {}),
+      },
+    };
+  }
+
+  #mergeCollection(localItems = [], remoteItems = []) {
+    const map = new Map();
+    (localItems || []).forEach((item) => {
+      if (item?.id) {
+        map.set(item.id, item);
+      }
+    });
+    (remoteItems || []).forEach((item) => {
+      if (!item?.id) return;
+      const existing = map.get(item.id);
+      if (!existing) {
+        map.set(item.id, item);
+        return;
+      }
+      const localTime = this.#parseTimestamp(existing.updatedAt);
+      const remoteTime = this.#parseTimestamp(item.updatedAt);
+      if (remoteTime >= localTime) {
+        map.set(item.id, item);
+      }
+    });
+    return Array.from(map.values()).sort(this.#compareByOrder);
+  }
+
+  #compareByOrder(a, b) {
+    const aOrder = Number.isFinite(a?.order) ? Number(a.order) : 0;
+    const bOrder = Number.isFinite(b?.order) ? Number(b.order) : 0;
+    return aOrder - bOrder;
+  }
+
+  #parseTimestamp(value) {
+    const number = Date.parse(value);
+    return Number.isFinite(number) ? number : 0;
   }
 }

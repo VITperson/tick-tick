@@ -49,6 +49,8 @@ export function renderDoneView({ state, handlers, route } = {}) {
     onToggle: (task, checked) => handlers.toggleTask?.(task, checked),
     onEdit: (task) => handlers.editTask?.(task),
     onDelete: (task) => handlers.deleteTask?.(task),
+    onSubtaskToggle: (task, subtaskId, checked) =>
+      handlers.toggleSubtask?.(task, subtaskId, checked),
   });
 
   const tasks = (state.tasks || [])

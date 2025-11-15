@@ -457,6 +457,10 @@ function buildWeekView(tasksByDate, timeFormat, handlers, selectDate, projectMap
       const text = document.createElement('span');
       text.textContent = task.title;
       content.append(text);
+      const subtasksPreview = createWeekTaskSubtasks(task, handlers);
+      if (subtasksPreview) {
+        content.append(subtasksPreview);
+      }
 
       taskBlock.append(content);
       taskBlock.addEventListener('click', (event) => {
@@ -512,6 +516,58 @@ function createTaskChip(task, timeFormat, handlers, project) {
   const tooltipText = getTaskTooltip(task, project, timeFormat);
   attachTooltip(label, tooltipText);
   return label;
+}
+
+function createWeekTaskSubtasks(task, handlers) {
+  if (!task.subtasks?.length) return null;
+
+  const completed = task.subtasks.filter((sub) => sub.done).length;
+  const wrapper = document.createElement('div');
+  wrapper.className = 'calendar-week__task-block__subtasks';
+
+  const badge = document.createElement('button');
+  badge.type = 'button';
+  badge.className = 'calendar-week__task-block__subtasks-badge';
+  badge.textContent = `${completed}/${task.subtasks.length}`;
+  badge.setAttribute('aria-label', `${completed} из ${task.subtasks.length} подзадач`);
+  badge.addEventListener('click', (event) => event.stopPropagation());
+
+  const popover = document.createElement('div');
+  popover.className = 'calendar-week__task-block__subtasks-popover';
+  popover.setAttribute('role', 'dialog');
+  popover.setAttribute('aria-label', 'Подзадачи');
+  popover.addEventListener('click', (event) => event.stopPropagation());
+
+  const list = document.createElement('ul');
+  list.className = 'calendar-week__task-block__subtask-list';
+
+  task.subtasks.forEach((subtask) => {
+    const row = document.createElement('li');
+    row.className = 'calendar-week__task-block__subtask-row';
+
+    const label = document.createElement('label');
+    label.className = 'calendar-week__task-block__subtask-label';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = Boolean(subtask.done);
+    checkbox.addEventListener('change', (event) => {
+      event.stopPropagation();
+      handlers.toggleSubtask?.(task, subtask.id, checkbox.checked);
+    });
+
+    const text = document.createElement('span');
+    text.className = 'calendar-week__task-block__subtask-text';
+    text.textContent = subtask.title;
+
+    label.append(checkbox, text);
+    row.append(label);
+    list.append(row);
+  });
+
+  popover.append(list);
+  wrapper.append(badge, popover);
+  return wrapper;
 }
 
 function renderCalendarView({ state, handlers }) {
@@ -672,6 +728,8 @@ function renderCalendarView({ state, handlers }) {
     onToggle: (task, checked) => handlers.toggleTask?.(task, checked),
     onEdit: (task) => handlers.editTask?.(task),
     onDelete: (task) => handlers.deleteTask?.(task),
+    onSubtaskToggle: (task, subtaskId, checked) =>
+      handlers.toggleSubtask?.(task, subtaskId, checked),
   });
 
   detailListContainer.append(

@@ -1,6 +1,9 @@
 import { formatDueDate, formatTimeLabel } from '../utils/format.js';
 
-export function createTaskItem(task, { onToggle, onEdit, onDelete, timeFormat = '24h' } = {}) {
+export function createTaskItem(
+  task,
+  { onToggle, onEdit, onDelete, onSubtaskToggle, timeFormat = '24h' } = {},
+) {
   const item = document.createElement('li');
   item.className = 'task-item';
   item.dataset.id = task.id;
@@ -46,10 +49,50 @@ export function createTaskItem(task, { onToggle, onEdit, onDelete, timeFormat = 
 
   if (task.subtasks?.length) {
     const completed = task.subtasks.filter((sub) => sub.done).length;
-    const subtasks = document.createElement('span');
-    subtasks.className = 'task-item__subtasks';
-    subtasks.textContent = `${completed}/${task.subtasks.length} подзадач`;
-    meta.append(subtasks);
+    const wrapper = document.createElement('div');
+    wrapper.className = 'task-item__subtasks-wrapper';
+
+    const badge = document.createElement('button');
+    badge.type = 'button';
+    badge.className = 'task-item__subtasks-badge';
+    badge.textContent = `${completed}/${task.subtasks.length}`;
+    badge.setAttribute('aria-label', `${completed} из ${task.subtasks.length} подзадач`);
+    badge.setAttribute('aria-haspopup', 'listbox');
+
+    const popover = document.createElement('div');
+    popover.className = 'task-item__subtasks-popover';
+    popover.setAttribute('role', 'dialog');
+    popover.setAttribute('aria-label', 'Подзадачи');
+
+    const list = document.createElement('ul');
+    list.className = 'task-item__subtask-list';
+
+    task.subtasks.forEach((subtask) => {
+      const row = document.createElement('li');
+      row.className = 'task-item__subtask-row';
+
+      const label = document.createElement('label');
+      label.className = 'task-item__subtask-label';
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = Boolean(subtask.done);
+      checkbox.addEventListener('change', () => {
+        onSubtaskToggle?.(task, subtask.id, checkbox.checked);
+      });
+
+      const text = document.createElement('span');
+      text.className = 'task-item__subtask-text';
+      text.textContent = subtask.title;
+
+      label.append(checkbox, text);
+      row.append(label);
+      list.append(row);
+    });
+
+    popover.append(list);
+    wrapper.append(badge, popover);
+    meta.append(wrapper);
   }
 
   if (task.reminderAt) {

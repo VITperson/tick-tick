@@ -454,7 +454,7 @@ class SyncManager {
     }
     try {
       const backup = await response.json();
-      return backup?.state || null;
+      return backup || null;
     } catch (error) {
       console.error('SyncManager.pullBackup', error);
       return null;
